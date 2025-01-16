@@ -12,12 +12,13 @@ struct ChatView: View {
                 
                 ScrollViewReader { scrollViewProxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 10) {
+                        LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(viewModel.messages) { message in
                                 ChatRow(message: message, showPinyin: viewModel.showPinyin)
                                     .id(message.id)
                             }
                         }
+                        .padding(.horizontal)
                     }
                     .onChange(of: viewModel.messages.count) { _ in
                         if let lastId = viewModel.messages.last?.id {
@@ -28,8 +29,10 @@ struct ChatView: View {
                     }
                 }
                 
+                Divider()
+                
                 HStack {
-                    TextField("输入消息…", text: $userInput)
+                    TextField("输入消息...", text: $userInput)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .onSubmit {
                             sendMessage()
@@ -40,8 +43,12 @@ struct ChatView: View {
                     
                     Button(action: sendMessage) {
                         Text("发送")
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.blue)
+                            .cornerRadius(8)
                     }
-                    .padding(.leading, 8)
                 }
                 .padding()
             }
@@ -61,39 +68,52 @@ struct ChatRow: View {
     let showPinyin: Bool
     
     var body: some View {
-        VStack(alignment: message.role == .user ? .trailing : .leading) {
-            if showPinyin {
-                Text(renderTextWithPinyin(message.content))
-                    .padding()
+        HStack {
+            if message.role == .user {
+                Spacer()
+            }
+            
+            VStack(alignment: message.role == .user ? .trailing : .leading) {
+                if showPinyin {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        ForEach(Array(message.content.enumerated()), id: \.offset) { _, char in
+                            CharacterWithPinyin(character: String(char))
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                     .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                    .cornerRadius(8)
-            } else {
-                Text(message.content)
-                    .padding()
-                    .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                    .cornerRadius(8)
+                    .cornerRadius(16)
+                } else {
+                    Text(message.content)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                        .cornerRadius(16)
+                }
+            }
+            
+            if message.role == .assistant {
+                Spacer()
             }
         }
-        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-        .padding(.horizontal)
     }
+}
+
+struct CharacterWithPinyin: View {
+    let character: String
     
-    private func renderTextWithPinyin(_ text: String) -> AttributedString {
-        var attributedString = AttributedString("")
-        for char in text {
-            let s = String(char)
-            if let pinyin = PinyinDictionary.shared.getPinyinTone(for: s) {
-                let pinyinAttr = AttributedString(pinyin)
-                var charAttr = AttributedString(s)
-                
-                attributedString.append(pinyinAttr)
-                attributedString.append(AttributedString("\n"))
-                attributedString.append(charAttr)
-                attributedString.append(AttributedString(" "))
-            } else {
-                attributedString.append(AttributedString(s))
+    var body: some View {
+        VStack(spacing: 2) {
+            if let pinyin = PinyinDictionary.shared.getPinyinTone(for: character) {
+                Text(pinyin)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             }
+            Text(character)
+                .font(.body)
         }
-        return attributedString
+        .fixedSize()
+        .padding(.horizontal, 1)
     }
 } 
