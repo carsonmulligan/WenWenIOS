@@ -70,33 +70,96 @@ struct ChatRow: View {
     var body: some View {
         HStack {
             if message.role == .user {
-                Spacer()
+                Spacer(minLength: 60)
             }
             
             VStack(alignment: message.role == .user ? .trailing : .leading) {
                 if showPinyin {
-                    HStack(alignment: .bottom, spacing: 0) {
-                        ForEach(Array(message.content.enumerated()), id: \.offset) { _, char in
-                            CharacterWithPinyin(character: String(char))
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                    .cornerRadius(16)
+                    FlexibleRow(text: message.content, showPinyin: true)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                        .cornerRadius(16)
                 } else {
                     Text(message.content)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
                         .cornerRadius(16)
                 }
             }
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: message.role == .user ? .trailing : .leading)
             
             if message.role == .assistant {
-                Spacer()
+                Spacer(minLength: 60)
             }
         }
+    }
+}
+
+struct FlexibleRow: View {
+    let text: String
+    let showPinyin: Bool
+    
+    var body: some View {
+        var width = CGFloat.zero
+        var height = CGFloat.zero
+        
+        return GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                ForEach(generateCharacterViews(containerWidth: geometry.size.width), id: \.offset) { charView in
+                    charView.view
+                        .alignmentGuide(.leading) { dimension in
+                            if abs(width - charView.width) > geometry.size.width {
+                                width = 0
+                                height -= charView.height
+                            }
+                            let result = width
+                            if charView.isLastCharacter {
+                                width = 0
+                            } else {
+                                width -= dimension.width
+                            }
+                            return result
+                        }
+                        .alignmentGuide(.top) { _ in
+                            let result = height
+                            if charView.isLastCharacter {
+                                height = 0
+                            }
+                            return result
+                        }
+                }
+            }
+        }
+    }
+    
+    private func generateCharacterViews(containerWidth: CGFloat) -> [(offset: Int, width: CGFloat, height: CGFloat, view: AnyView, isLastCharacter: Bool)] {
+        var views: [(offset: Int, width: CGFloat, height: CGFloat, view: AnyView, isLastCharacter: Bool)] = []
+        var currentWidth: CGFloat = 0
+        
+        for (index, char) in text.enumerated() {
+            let charString = String(char)
+            let view = CharacterWithPinyin(character: charString)
+            let size = view.sizeThatFits(containerWidth)
+            
+            if currentWidth + size.width > containerWidth {
+                currentWidth = 0
+            }
+            
+            views.append((
+                offset: index,
+                width: size.width,
+                height: size.height,
+                view: AnyView(view),
+                isLastCharacter: index == text.count - 1
+            ))
+            
+            currentWidth += size.width
+        }
+        
+        return views
     }
 }
 
@@ -115,5 +178,11 @@ struct CharacterWithPinyin: View {
         }
         .fixedSize()
         .padding(.horizontal, 1)
+    }
+    
+    func sizeThatFits(_ width: CGFloat) -> CGSize {
+        let estimatedWidth: CGFloat = 30  // Approximate width for a character + pinyin
+        let estimatedHeight: CGFloat = 40  // Approximate height for character + pinyin
+        return CGSize(width: estimatedWidth, height: estimatedHeight)
     }
 } 

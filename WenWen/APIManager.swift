@@ -1,18 +1,17 @@
 import Foundation
-import Security
 
 class APIManager {
-    private let baseUrl = "https://api.deepseek.com"
+    private let baseUrl = "https://api.deepseek.com/v1/chat/completions"
     private let modelName = "deepseek-chat"
     
     private var apiKey: String {
         return Config.apiKey
     }
-
+    
     func sendStreamingRequest(messages: [[String: String]],
                             onPartialResponse: @escaping (String) -> Void,
                             completion: @escaping () -> Void) {
-        guard let url = URL(string: baseUrl + "/v1/chat/completions") else { return }
+        guard let url = URL(string: baseUrl) else { return }
         
         let requestBody: [String: Any] = [
             "model": modelName,
@@ -28,14 +27,26 @@ class APIManager {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+        let session = URLSession.shared
+        let task = session.dataTask(with: request) { data, response, error in
             if let error = error {
+                print("Network error: \(error)")
                 DispatchQueue.main.async {
                     onPartialResponse("网络错误: \(error.localizedDescription)")
                     completion()
                 }
                 return
             }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                DispatchQueue.main.async {
+                    onPartialResponse("无效的响应")
+                    completion()
+                }
+                return
+            }
+            
+            print("Response status code: \(httpResponse.statusCode)")
             
             guard let data = data else {
                 DispatchQueue.main.async {
@@ -45,22 +56,34 @@ class APIManager {
                 return
             }
             
-            if let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []),
-               let dict = jsonObject as? [String: Any],
-               let choices = dict["choices"] as? [[String: Any]],
-               let first = choices.first,
-               let messageDict = first["message"] as? [String: Any],
-               let content = messageDict["content"] as? String {
+            // Print raw response for debugging
+            if let rawResponse = String(data: data, encoding: .utf8) {
+                print("Raw response: \(rawResponse)")
+            }
+            
+            if httpResponse.statusCode == 200 {
+                // Handle streaming response
+                let responseString = String(decoding: data, as: UTF8.self)
+                let events = responseString.components(separatedBy: "data: ")
                 
-                let words = content.map { String($0) }
-                for char in words {
-                    DispatchQueue.main.async {
-                        onPartialResponse(char)
+                for event in events {
+                    guard !event.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    guard event != "[DONE]" else { continue }
+                    
+                    if let jsonData = event.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                       let choices = json["choices"] as? [[String: Any]],
+                       let first = choices.first,
+                       let delta = first["delta"] as? [String: Any],
+                       let content = delta["content"] as? String {
+                        DispatchQueue.main.async {
+                            onPartialResponse(content)
+                        }
                     }
                 }
             } else {
                 DispatchQueue.main.async {
-                    onPartialResponse("无法解析服务器响应")
+                    onPartialResponse("服务器错误: \(httpResponse.statusCode)")
                 }
             }
             
