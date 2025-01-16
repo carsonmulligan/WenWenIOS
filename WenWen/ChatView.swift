@@ -3,7 +3,6 @@ import SwiftUI
 struct ChatView: View {
     @EnvironmentObject var viewModel: ChatViewModel
     @State private var userInput: String = ""
-    @State private var showSettings = false
     
     var body: some View {
         NavigationView {
@@ -47,14 +46,6 @@ struct ChatView: View {
                 .padding()
             }
             .navigationTitle("问问")
-            .navigationBarItems(trailing: Button(action: {
-                showSettings = true
-            }) {
-                Image(systemName: "gear")
-            })
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
         }
     }
     
