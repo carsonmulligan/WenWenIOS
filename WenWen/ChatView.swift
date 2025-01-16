@@ -3,43 +3,55 @@ import SwiftUI
 struct ChatView: View {
     @EnvironmentObject var viewModel: ChatViewModel
     @State private var userInput: String = ""
+    @State private var showSettings = false
     
     var body: some View {
-        VStack {
-            Toggle("显示拼音 (Show Pinyin)", isOn: $viewModel.showPinyin)
-                .padding()
-            
-            ScrollViewReader { scrollViewProxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(viewModel.messages) { message in
-                            ChatRow(message: message, showPinyin: viewModel.showPinyin)
-                                .id(message.id)
-                        }
-                    }
-                }
-                .onChange(of: viewModel.messages.count) { _ in
-                    if let lastId = viewModel.messages.last?.id {
-                        withAnimation {
-                            scrollViewProxy.scrollTo(lastId, anchor: .bottom)
-                        }
-                    }
-                }
-            }
-            
-            HStack {
-                TextField("输入消息…", text: $userInput)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .onSubmit {
-                        sendMessage()
-                    }
+        NavigationView {
+            VStack {
+                Toggle("显示拼音 (Show Pinyin)", isOn: $viewModel.showPinyin)
+                    .padding()
                 
-                Button(action: sendMessage) {
-                    Text("发送")
+                ScrollViewReader { scrollViewProxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ForEach(viewModel.messages) { message in
+                                ChatRow(message: message, showPinyin: viewModel.showPinyin)
+                                    .id(message.id)
+                            }
+                        }
+                    }
+                    .onChange(of: viewModel.messages.count) { _ in
+                        if let lastId = viewModel.messages.last?.id {
+                            withAnimation {
+                                scrollViewProxy.scrollTo(lastId, anchor: .bottom)
+                            }
+                        }
+                    }
                 }
-                .padding(.leading, 8)
+                
+                HStack {
+                    TextField("输入消息…", text: $userInput)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onSubmit {
+                            sendMessage()
+                        }
+                    
+                    Button(action: sendMessage) {
+                        Text("发送")
+                    }
+                    .padding(.leading, 8)
+                }
+                .padding()
             }
-            .padding()
+            .navigationTitle("问问")
+            .navigationBarItems(trailing: Button(action: {
+                showSettings = true
+            }) {
+                Image(systemName: "gear")
+            })
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
         }
     }
     
