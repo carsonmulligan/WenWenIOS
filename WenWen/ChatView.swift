@@ -20,8 +20,8 @@ struct ChatView: View {
                         }
                         .padding(.horizontal)
                     }
-                    .onChange(of: viewModel.messages.count) { _ in
-                        if let lastId = viewModel.messages.last?.id {
+                    .onChange(of: viewModel.messages) { _, messages in
+                        if let lastId = messages.last?.id {
                             withAnimation {
                                 scrollViewProxy.scrollTo(lastId, anchor: .bottom)
                             }
@@ -104,10 +104,10 @@ struct MessageText: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(splitIntoLines(), id: \.self) { line in
+            ForEach(Array(splitIntoLines().enumerated()), id: \.offset) { _, line in
                 HStack(alignment: .bottom, spacing: 2) {
-                    ForEach(line.indices, id: \.self) { index in
-                        CharacterWithPinyin(character: String(line[index]))
+                    ForEach(Array(line.enumerated()), id: \.offset) { _, char in
+                        CharacterWithPinyin(character: String(char))
                     }
                 }
             }
@@ -117,7 +117,7 @@ struct MessageText: View {
     private func splitIntoLines() -> [String] {
         var lines: [String] = []
         var currentLine = ""
-        let maxCharsPerLine = 12 // Adjust this value based on your needs
+        let maxCharsPerLine = 15 // Increased for better readability
         
         for char in text {
             if currentLine.count >= maxCharsPerLine {
