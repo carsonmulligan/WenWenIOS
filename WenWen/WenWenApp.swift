@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct WenWenApp: App {
+    @StateObject private var chatViewModel = ChatViewModel()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ChatView()
+                .environmentObject(chatViewModel)
         }
     }
 }
