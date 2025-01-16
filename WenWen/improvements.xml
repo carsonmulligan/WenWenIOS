@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<improvements>
+    <bug id="1">
+        <title>Fix Chat Disappearing on Pinyin Toggle</title>
+        <description>Messages disappear when toggling pinyin off and don't return without app restart</description>
+        <solution>
+            <code_example>
+                <![CDATA[
+// In ChatViewModel.swift
+class ChatViewModel: ObservableObject {
+    @Published var messages: [ChatMessage] = []
+    @Published var showPinyin: Bool = false {
+        didSet {
+            // Don't reload messages, just trigger view update
+            objectWillChange.send()
+        }
+    }
+    // ... rest of the code
+}
+
+// In ChatView.swift - Update ChatRow to handle state changes better
+struct ChatRow: View {
+    let message: ChatMessage
+    let showPinyin: Bool
+    
+    var body: some View {
+        HStack {
+            if message.role == .user {
+                Spacer(minLength: 60)
+            }
+            
+            VStack(alignment: message.role == .user ? .trailing : .leading) {
+                Group {
+                    if showPinyin {
+                        MessageText(text: message.content, showPinyin: true)
+                    } else {
+                        Text(message.content)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                .cornerRadius(16)
+            }
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: message.role == .user ? .trailing : .leading)
+            
+            if message.role == .assistant {
+                Spacer(minLength: 60)
+            }
+        }
+        .id("\(message.id)-\(showPinyin)") // Force view update on pinyin toggle
+    }
+}
+                ]]>
+            </code_example>
+        </solution>
+    </bug>
+
+    <feature id="2">
+        <title>Add Sidebar with Chat History</title>
+        <description>Implement a sidebar showing past chats with local JSON storage</description>
+        <solution>
+            <code_example>
+                <![CDATA[
+// ChatHistory.swift
+struct ChatSession: Codable, Identifiable {
+    let id: UUID
+    var title: String
+    var timestamp: Date
+    var messages: [ChatMessage]
+}
+
+// ChatHistoryManager.swift
+class ChatHistoryManager {
+    private let fileManager = FileManager.default
+    private let historyFile = "chat_history.json"
+    
+    func saveSession(_ session: ChatSession) {
+        guard let documentDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let fileURL = documentDirectory.appendingPathComponent(historyFile)
+        
+        var sessions = loadSessions()
+        sessions.append(session)
+        
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(sessions)
+            try data.write(to: fileURL)
+        } catch {
+            print("Error saving chat history: \(error)")
+        }
+    }
+    
+    func loadSessions() -> [ChatSession] {
+        guard let documentDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return [] }
+        let fileURL = documentDirectory.appendingPathComponent(historyFile)
+        
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let decoder = JSONDecoder()
+            return try decoder.decode([ChatSession].self, from: data)
+        } catch {
+            return []
+        }
+    }
+}
+
+// MainView.swift
+struct MainView: View {
+    @State private var sessions: [ChatSession] = []
+    @State private var selectedSession: UUID?
+    @State private var showingSidebar: Bool = false
+    
+    var body: some View {
+        NavigationSplitView {
+            List(sessions, selection: $selectedSession) { session in
+                NavigationLink(value: session.id) {
+                    VStack(alignment: .leading) {
+                        Text(session.title)
+                        Text(session.timestamp, style: .date)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Chats")
+            .toolbar {
+                Button("New Chat") {
+                    let newSession = ChatSession(id: UUID(), title: "New Chat", timestamp: Date(), messages: [])
+                    sessions.append(newSession)
+                    selectedSession = newSession.id
+                }
+            }
+        } detail: {
+            if let sessionId = selectedSession,
+               let session = sessions.first(where: { $0.id == sessionId }) {
+                ChatView(session: session)
+            } else {
+                Text("Select a chat or create a new one")
+            }
+        }
+    }
+}
+                ]]>
+            </code_example>
+        </solution>
+    </feature>
+
+    <bug id="3">
+        <title>Fix Chinese Input in iOS Simulator</title>
+        <description>Enable proper Chinese input method in simulator and ensure it works in production</description>
+        <solution>
+            <code_example>
+                <![CDATA[
+// In ChatView.swift - Update TextField configuration
+HStack {
+    TextField("输入消息...", text: $userInput)
+        .textFieldStyle(RoundedBorderTextFieldStyle())
+        .onSubmit {
+            sendMessage()
+        }
+        // Enable proper input method support
+        .keyboardType(.default)
+        .autocapitalization(.none)
+        .disableAutocorrection(true)
+        // Add these modifiers for better input method support
+        .textInputMode(.primary)
+        .environment(\.layoutDirection, .leftToRight)
+        // For iOS 15 and later, add this
+        .submitLabel(.send)
+}
+
+// Note: To enable Chinese input in Simulator:
+// 1. In macOS Settings > Keyboard > Input Sources, add Chinese input methods
+// 2. In Simulator, Settings > General > Keyboard > Keyboards, add Chinese keyboards
+// 3. Use Command + Space or Globe key to switch input methods in Simulator
+                ]]>
+            </code_example>
+        </solution>
+    </bug>
+
+    <notes>
+        <priority_order>
+            1. Fix chat disappearing issue (Critical)
+            2. Fix Chinese input support (High)
+            3. Add chat history sidebar (Medium)
+        </priority_order>
+        <additional_considerations>
+            - Consider adding chat export functionality
+            - Add search functionality for chat history
+            - Implement chat deletion and editing
+            - Add chat title editing
+        </additional_considerations>
+    </notes>
+</improvements> 
