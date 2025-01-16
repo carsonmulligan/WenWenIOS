@@ -18,7 +18,7 @@ struct ChatView: View {
                         }
                     }
                 }
-                .onChange(of: viewModel.messages) { _ in
+                .onChange(of: viewModel.messages.count) { _ in
                     if let lastId = viewModel.messages.last?.id {
                         withAnimation {
                             scrollViewProxy.scrollTo(lastId, anchor: .bottom)
@@ -77,11 +77,10 @@ struct ChatRow: View {
         for char in text {
             let s = String(char)
             if let pinyin = PinyinDictionary.shared.getPinyinTone(for: s) {
-                var container = AttributedString(s)
-                container.inlinePresentationIntent = .ruby
-                let pinyinText = AttributedString("\n\(pinyin)\n")
+                let pinyinText = AttributedString(pinyin + "\n")
                 attributedString.append(pinyinText)
-                attributedString.append(container)
+                attributedString.append(AttributedString(s))
+                attributedString.append(AttributedString(" "))
             } else {
                 attributedString.append(AttributedString(s))
             }
