@@ -35,6 +35,9 @@ struct ChatView: View {
                         .onSubmit {
                             sendMessage()
                         }
+                        .keyboardType(.default)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
                     
                     Button(action: sendMessage) {
                         Text("发送")
@@ -89,9 +92,12 @@ struct ChatRow: View {
         for char in text {
             let s = String(char)
             if let pinyin = PinyinDictionary.shared.getPinyinTone(for: s) {
-                let pinyinText = AttributedString(pinyin + "\n")
-                attributedString.append(pinyinText)
-                attributedString.append(AttributedString(s))
+                let pinyinAttr = AttributedString(pinyin)
+                var charAttr = AttributedString(s)
+                
+                attributedString.append(pinyinAttr)
+                attributedString.append(AttributedString("\n"))
+                attributedString.append(charAttr)
                 attributedString.append(AttributedString(" "))
             } else {
                 attributedString.append(AttributedString(s))
