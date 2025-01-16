@@ -1,0 +1,444 @@
+<designDoc>
+  <summary>
+    This document describes how to build a Swift iOS app called "问问" (Wēn Wèn), which functions similarly to a ChatGPT-style streaming chat application using the DeepSeek /chat/completions API. The user can type in Chinese text, and responses are streamed back in real time. The conversation history is stored locally, and the user can enable an optional "Show Pinyin" mode to display pinyin with tone marks above each Chinese character, leveraging a local JSON dictionary of Chinese-to-Pinyin mappings. This document also describes how to organize the project’s Swift files and key components.
+  </summary>
+
+  <projectStructure>
+    <description>
+      The app will be built in Swift (with SwiftUI as an example UI framework). You can adapt these files to UIKit if desired. The following files are required:
+      1. WeWenApp.swift (App entry point)
+      2. ChatView.swift (Main chat UI)
+      3. ChatViewModel.swift (State management and logic)
+      4. ChatMessage.swift (Data model for each chat message)
+      5. PinyinDictionary.swift (Manages loading and lookup of Chinese-to-Pinyin mappings)
+      6. APIManager.swift (Networking code to interface with DeepSeek /chat/completions for streaming)
+      7. LocalStorage.swift (Saves and loads chat history locally using UserDefaults or local JSON)
+      8. chinese_to_pinyin_dictionary_with_tones.json (Resource file containing character-to-pinyin mappings)
+      9. Info.plist (Standard iOS configuration; ensure appropriate permissions and settings if needed)
+    </description>
+  </projectStructure>
+
+  <file name="WeWenApp.swift">
+    <![CDATA[
+import SwiftUI
+
+@main
+struct WeWenApp: App {
+    @StateObject private var chatViewModel = ChatViewModel()
+    
+    var body: some Scene {
+        WindowGroup {
+            ChatView()
+                .environmentObject(chatViewModel)
+        }
+    }
+}
+    ]]>
+  </file>
+
+  <file name="ChatView.swift">
+    <![CDATA[
+import SwiftUI
+
+struct ChatView: View {
+    @EnvironmentObject var viewModel: ChatViewModel
+    @State private var userInput: String = ""
+    
+    var body: some View {
+        VStack {
+            Toggle("显示拼音 (Show Pinyin)", isOn: $viewModel.showPinyin)
+                .padding()
+            
+            ScrollViewReader { scrollViewProxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(viewModel.messages) { message in
+                            ChatRow(message: message, showPinyin: viewModel.showPinyin)
+                                .id(message.id)
+                        }
+                    }
+                }
+                .onChange(of: viewModel.messages) { _ in
+                    // Automatically scroll to the bottom on new messages
+                    if let lastId = viewModel.messages.last?.id {
+                        withAnimation {
+                            scrollViewProxy.scrollTo(lastId, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            
+            HStack {
+                TextField("输入消息…", text: $userInput, onCommit: {
+                    sendMessage()
+                })
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                
+                Button(action: sendMessage) {
+                    Text("发送")
+                }
+                .padding(.leading, 8)
+            }
+            .padding()
+        }
+    }
+    
+    private func sendMessage() {
+        guard !userInput.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        viewModel.sendMessage(userInput)
+        userInput = ""
+    }
+}
+
+struct ChatRow: View {
+    let message: ChatMessage
+    let showPinyin: Bool
+    
+    var body: some View {
+        VStack(alignment: message.role == .user ? .trailing : .leading) {
+            if showPinyin {
+                // If showPinyin is enabled, display the text with pinyin
+                Text(renderTextWithPinyin(message.content))
+                    .padding()
+                    .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                    .cornerRadius(8)
+            } else {
+                Text(message.content)
+                    .padding()
+                    .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                    .cornerRadius(8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        .padding(.horizontal)
+    }
+    
+    private func renderTextWithPinyin(_ text: String) -> AttributedString {
+        // We will map each character in 'text' to pinyin from the dictionary (if available).
+        var attributedString = AttributedString("")
+        for char in text {
+            let s = String(char)
+            if let pinyin = PinyinDictionary.shared.getPinyinTone(for: s) {
+                // Build an attributed string with pinyin as an accessibility annotation or
+                // a baseline offset. This is a simplistic example:
+                var container = AttributedString(s)
+                container.inlinePresentationIntent = .ruby
+                // SwiftUI 4.0+ does not natively have a direct "Ruby text" mechanism, so we
+                // approximate with an attachment or custom approach. For demonstration, we
+                // place the pinyin above as a separate line. 
+                
+                // You might consider 3rd-party solutions for more advanced Pinyin annotation.
+                
+                let pinyinText = AttributedString("\n\(pinyin)\n")
+                attributedString.append(pinyinText)
+                attributedString.append(container)
+            } else {
+                attributedString.append(AttributedString(s))
+            }
+        }
+        return attributedString
+    }
+}
+    ]]>
+  </file>
+
+  <file name="ChatViewModel.swift">
+    <![CDATA[
+import SwiftUI
+
+class ChatViewModel: ObservableObject {
+    @Published var messages: [ChatMessage] = []
+    @Published var showPinyin: Bool = false
+    
+    private let localStorage = LocalStorage()
+    private let apiManager = APIManager()
+    
+    init() {
+        // Load saved messages from local storage on startup
+        messages = localStorage.loadMessages()
+    }
+    
+    func sendMessage(_ content: String) {
+        // Create user message
+        let userMessage = ChatMessage(role: .user, content: content)
+        messages.append(userMessage)
+        localStorage.saveMessages(messages)
+        
+        // Prepare context for multi-round conversation
+        let contextMessages = messages.map { $0.toAPIDict() }
+        
+        // Call the API manager for streaming response
+        apiManager.sendStreamingRequest(messages: contextMessages) { [weak self] partialReply in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                // If we already have an assistant message being constructed, append to it
+                if let last = self.messages.last, last.role == .assistant && last.isStreaming {
+                    // Update ongoing streaming message
+                    let updatedContent = last.content + partialReply
+                    self.messages[self.messages.count - 1].content = updatedContent
+                } else {
+                    // Otherwise, create a new assistant streaming message
+                    let assistantMessage = ChatMessage(role: .assistant, content: partialReply, isStreaming: true)
+                    self.messages.append(assistantMessage)
+                }
+                self.localStorage.saveMessages(self.messages)
+            }
+        } completion: { [weak self] in
+            // Mark the last streaming message as complete
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                if let lastIndex = self.messages.indices.last {
+                    self.messages[lastIndex].isStreaming = false
+                }
+                self.localStorage.saveMessages(self.messages)
+            }
+        }
+    }
+}
+    ]]>
+  </file>
+
+  <file name="ChatMessage.swift">
+    <![CDATA[
+import Foundation
+
+enum MessageRole: String, Codable {
+    case user
+    case assistant
+}
+
+struct ChatMessage: Identifiable, Codable {
+    let id = UUID()
+    let role: MessageRole
+    var content: String
+    var isStreaming: Bool = false
+    
+    func toAPIDict() -> [String: String] {
+        // Role should be "user" or "assistant"
+        return ["role": role.rawValue, "content": content]
+    }
+}
+    ]]>
+  </file>
+
+  <file name="PinyinDictionary.swift">
+    <![CDATA[
+import Foundation
+
+class PinyinDictionary {
+    static let shared = PinyinDictionary()
+    
+    private var dict: [String: [String: String]] = [:]
+    
+    private init() {
+        // Load the dictionary from the bundled JSON
+        if let url = Bundle.main.url(forResource: "chinese_to_pinyin_dictionary_with_tones", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: [String: String]] {
+            dict = json
+        }
+    }
+    
+    func getPinyinTone(for character: String) -> String? {
+        // The JSON is structured like:
+        // {
+        //   "㘎": {
+        //     "pinyin": "han3",
+        //     "definition": "...",
+        //     "pinyin_tone_lines": "hǎn"
+        //   },
+        //   ...
+        // }
+        // We can use "pinyin_tone_lines" for the final displayed pinyin with tones.
+        return dict[character]?["pinyin_tone_lines"]
+    }
+}
+    ]]>
+  </file>
+
+  <file name="APIManager.swift">
+    <![CDATA[
+import Foundation
+
+class APIManager {
+    
+    // You can replace baseUrl or model as needed for your usage
+    private let baseUrl = "https://api.deepseek.com"
+    private let apiKey = "<DeepSeek API Key>"
+    private let modelName = "deepseek-chat"
+
+    // Example streaming request function
+    func sendStreamingRequest(messages: [[String: String]],
+                              onPartialResponse: @escaping (String) -> Void,
+                              completion: @escaping () -> Void) {
+        // Construct the request URL
+        guard let url = URL(string: baseUrl + "/v1/chat/completions") else { return }
+        
+        // Create JSON body
+        let requestBody: [String: Any] = [
+            "model": modelName,
+            "messages": messages
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: requestBody, options: []) else { return }
+        
+        // Create URLRequest
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        // In a real streaming scenario, you may use URLSession's dataTask with
+        // partial data reading (Server-Sent Events or chunked responses).
+        // This example simulates partial streaming by reading chunks from a normal response.
+        
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            guard let data = data, error == nil else {
+                DispatchQueue.main.async {
+                    onPartialResponse("（请求出错）")
+                    completion()
+                }
+                return
+            }
+            
+            // Parse the JSON to simulate chunk streaming
+            // The DeepSeek response structure is typically:
+            // {
+            //   "choices": [
+            //     {
+            //       "message": { "role": "assistant", "content": "..." },
+            //       ...
+            //     }
+            //   ]
+            // }
+            
+            if let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []),
+               let dict = jsonObject as? [String: Any],
+               let choices = dict["choices"] as? [[String: Any]],
+               let first = choices.first,
+               let messageDict = first["message"] as? [String: Any],
+               let content = messageDict["content"] as? String {
+                
+                // For demonstration, we will 'stream' the content in small segments
+                let words = content.map { String($0) }
+                for (index, char) in words.enumerated() {
+                    // Add some artificial delay for demonstration. 
+                    // Remove or reduce it in a real production scenario.
+                    usleep(60000) // 60ms per character
+                    DispatchQueue.main.async {
+                        onPartialResponse(char)
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    onPartialResponse("（无法解析服务器响应）")
+                }
+            }
+            
+            DispatchQueue.main.async {
+                completion()
+            }
+        }
+        
+        task.resume()
+    }
+}
+    ]]>
+  </file>
+
+  <file name="LocalStorage.swift">
+    <![CDATA[
+import Foundation
+
+class LocalStorage {
+    private let storageKey = "WeWenChatMessages"
+    
+    func saveMessages(_ messages: [ChatMessage]) {
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(messages)
+            UserDefaults.standard.set(data, forKey: storageKey)
+        } catch {
+            print("Error saving messages: \(error)")
+        }
+    }
+    
+    func loadMessages() -> [ChatMessage] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else {
+            return []
+        }
+        do {
+            let decoder = JSONDecoder()
+            let loaded = try decoder.decode([ChatMessage].self, from: data)
+            return loaded
+        } catch {
+            print("Error loading messages: \(error)")
+            return []
+        }
+    }
+}
+    ]]>
+  </file>
+
+  <file name="chinese_to_pinyin_dictionary_with_tones.json">
+    <![CDATA[
+{
+  "㘎": {
+    "pinyin": "han3",
+    "definition": "(literary) (of a tiger) to growl; to roar",
+    "pinyin_tone_lines": "hǎn"
+  },
+  "㘭": {
+    "pinyin": "ao4",
+    "definition": "variant of 坳[ao4]",
+    "pinyin_tone_lines": "ào"
+  },
+  "坳": {
+    "pinyin": "ao4",
+    "definition": "depression; cavity; hollow/Taiwan pr. [ao1]",
+    "pinyin_tone_lines": "ào"
+  }
+  // ... other characters ...
+}
+    ]]>
+  </file>
+
+  <usageInstructions>
+    <multiRoundConversation>
+      1. On app launch, the existing conversation is loaded locally.
+      2. When the user sends a new query, ChatViewModel appends the user's message to the in-memory conversation array and re-saves it locally.
+      3. The entire conversation is then passed to the DeepSeek /chat/completions endpoint (model: "deepseek-chat").
+      4. The response is received in a streaming simulation via the APIManager, which chunk-by-chunk appends partial text to the last assistant message in real time.
+      5. Once streaming completes, the last assistant message is marked as isStreaming = false, and the full conversation is re-saved locally.
+    </multiRoundConversation>
+
+    <pinyinFeature>
+      - The user can toggle "Show Pinyin" on or off.
+      - If toggled on, each Chinese character in the messages is looked up in the local dictionary (chinese_to_pinyin_dictionary_with_tones.json).
+      - If available, the pinyin with tone marks (pinyin_tone_lines) is shown above or alongside the character. The example above uses a simplified approach in ChatRow's renderTextWithPinyin(_:) method. An advanced solution might use custom text rendering or third-party libraries for a more polished ruby-text style.
+    </pinyinFeature>
+
+    <streamingImplementationNote>
+      - DeepSeek’s /chat/completions is stateless, so you must always send the entire conversation, including both user and assistant messages, each time you make a call.
+      - The code in APIManager simulates chunked streaming by iterating through characters in the response. In a production setting, you would adopt a server-sent events approach or chunked transfer encoding to handle partial streaming in real time if supported by the API.
+    </streamingImplementationNote>
+
+    <localStorage>
+      - This example uses UserDefaults for simplicity.
+      - You could also use Core Data, a local file, or any other storage mechanism to persist chat messages across app launches.
+    </localStorage>
+
+    <architectureSummary>
+      - WeWenApp.swift: Application entry point. Creates a single shared ChatViewModel instance.
+      - ChatView.swift: Main UI with a toggle for pinyin, a scrollable chat message list, and a text field to send new messages.
+      - ChatViewModel.swift: Business logic and state management, including sending messages to the API, storing chat messages, and streaming partial text.
+      - ChatMessage.swift: Defines the data structure for a chat message, includes role (user/assistant), content, and streaming state.
+      - PinyinDictionary.swift: Loads and queries the local JSON dictionary to map characters to pinyin with tone marks.
+      - APIManager.swift: Handles the actual HTTP request to DeepSeek’s /chat/completions, simulating streaming partial responses.
+      - LocalStorage.swift: Saves and loads messages from persistent storage (UserDefaults).
+      - chinese_to_pinyin_dictionary_with_tones.json: Resource file containing the dictionary mapping Chinese characters to pinyin.
+    </architectureSummary>
+  </usageInstructions>
+</designDoc>
