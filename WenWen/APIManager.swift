@@ -4,75 +4,14 @@ import Security
 class APIManager {
     private let baseUrl = "https://api.deepseek.com"
     private let modelName = "deepseek-chat"
-    private let keychainService = "com.wenwenapp.apikey"
-    private let keychainAccount = "deepseek"
     
-    enum APIError: Error {
-        case missingAPIKey
-        case networkError(Error)
-        case invalidResponse
-    }
-    
-    private var apiKey: String? {
-        // First try environment variable (development)
-        if let envKey = ProcessInfo.processInfo.environment["DEEPSEEK_API_KEY"] {
-            return envKey
-        }
-        
-        // Then try keychain (production)
-        return getAPIKeyFromKeychain()
-    }
-    
-    private func getAPIKeyFromKeychain() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true
-        ]
-        
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let key = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        
-        return key
-    }
-    
-    func saveAPIKeyToKeychain(_ key: String) {
-        let data = key.data(using: .utf8)!
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecValueData as String: data
-        ]
-        
-        // First try to delete any existing key
-        SecItemDelete(query as CFDictionary)
-        
-        // Then save the new key
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
-            print("Error saving API key to keychain: \(status)")
-        }
+    private var apiKey: String {
+        return Config.apiKey
     }
 
     func sendStreamingRequest(messages: [[String: String]],
                             onPartialResponse: @escaping (String) -> Void,
                             completion: @escaping () -> Void) {
-        guard let apiKey = self.apiKey else {
-            DispatchQueue.main.async {
-                onPartialResponse("API密钥未设置。请在设置中配置API密钥。")
-                completion()
-            }
-            return
-        }
-        
         guard let url = URL(string: baseUrl + "/v1/chat/completions") else { return }
         
         let requestBody: [String: Any] = [
