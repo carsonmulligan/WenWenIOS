@@ -2,7 +2,12 @@ import SwiftUI
 
 class ChatViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
-    @Published var showPinyin: Bool = false
+    @Published var showPinyin: Bool = false {
+        didSet {
+            // Just trigger view update without reloading messages
+            objectWillChange.send()
+        }
+    }
     
     private let localStorage = LocalStorage()
     private let apiManager = APIManager()
@@ -24,7 +29,9 @@ class ChatViewModel: ObservableObject {
             DispatchQueue.main.async {
                 if let last = self.messages.last, last.role == .assistant && last.isStreaming {
                     let updatedContent = last.content + partialReply
-                    self.messages[self.messages.count - 1].content = updatedContent
+                    if let lastIndex = self.messages.indices.last {
+                        self.messages[lastIndex].content = updatedContent
+                    }
                 } else {
                     let assistantMessage = ChatMessage(role: .assistant, content: partialReply, isStreaming: true)
                     self.messages.append(assistantMessage)

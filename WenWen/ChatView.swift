@@ -15,7 +15,7 @@ struct ChatView: View {
                         LazyVStack(alignment: .leading, spacing: 12) {
                             ForEach(viewModel.messages) { message in
                                 ChatRow(message: message, showPinyin: viewModel.showPinyin)
-                                    .id(message.id)
+                                    .id("\(message.id)-\(viewModel.showPinyin)")
                             }
                         }
                         .padding(.horizontal)
@@ -23,7 +23,7 @@ struct ChatView: View {
                     .onChange(of: viewModel.messages) { _, messages in
                         if let lastId = messages.last?.id {
                             withAnimation {
-                                scrollViewProxy.scrollTo(lastId, anchor: .bottom)
+                                scrollViewProxy.scrollTo("\(lastId)-\(viewModel.showPinyin)", anchor: .bottom)
                             }
                         }
                     }
@@ -40,6 +40,7 @@ struct ChatView: View {
                         .keyboardType(.default)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
+                        .submitLabel(.send)
                     
                     Button(action: sendMessage) {
                         Text("发送")
@@ -74,20 +75,18 @@ struct ChatRow: View {
             }
             
             VStack(alignment: message.role == .user ? .trailing : .leading) {
-                if showPinyin {
-                    MessageText(text: message.content, showPinyin: true)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                        .cornerRadius(16)
-                } else {
-                    Text(message.content)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                        .cornerRadius(16)
+                Group {
+                    if showPinyin {
+                        MessageText(text: message.content)
+                    } else {
+                        Text(message.content)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(message.role == .user ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
+                .cornerRadius(16)
             }
             .frame(maxWidth: UIScreen.main.bounds.width * 0.75, alignment: message.role == .user ? .trailing : .leading)
             
@@ -100,12 +99,11 @@ struct ChatRow: View {
 
 struct MessageText: View {
     let text: String
-    let showPinyin: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(splitIntoLines().enumerated()), id: \.offset) { _, line in
-                HStack(alignment: .bottom, spacing: 2) {
+            ForEach(splitIntoLines(), id: \.self) { line in
+                HStack(alignment: .center, spacing: 2) {
                     ForEach(Array(line.enumerated()), id: \.offset) { _, char in
                         CharacterWithPinyin(character: String(char))
                     }
@@ -117,7 +115,7 @@ struct MessageText: View {
     private func splitIntoLines() -> [String] {
         var lines: [String] = []
         var currentLine = ""
-        let maxCharsPerLine = 15 // Increased for better readability
+        let maxCharsPerLine = 15
         
         for char in text {
             if currentLine.count >= maxCharsPerLine {
@@ -144,10 +142,11 @@ struct CharacterWithPinyin: View {
                 Text(pinyin)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             Text(character)
                 .font(.body)
+                .fixedSize(horizontal: true, vertical: false)
         }
-        .fixedSize()
     }
 } 
