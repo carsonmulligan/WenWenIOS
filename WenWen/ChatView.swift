@@ -1,70 +1,89 @@
 import SwiftUI
 
 struct ChatView: View {
-    @EnvironmentObject var viewModel: ChatViewModel
-    @State private var userInput: String = ""
+    @EnvironmentObject var chatStore: ChatStore
+    var session: ChatSession
+    @State private var inputText = ""
+    @State private var showPinyin = true
+    @FocusState private var isFocused: Bool
     
     var body: some View {
-        NavigationView {
-            VStack {
-                Toggle("显示拼音 (Show Pinyin)", isOn: $viewModel.showPinyin)
-                    .padding()
-                
-                ScrollViewReader { scrollViewProxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            ForEach(viewModel.messages) { message in
-                                ChatRow(message: message, showPinyin: viewModel.showPinyin)
-                                    .id("\(message.id)-\(viewModel.showPinyin)")
-                            }
+        VStack {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(session.messages) { message in
+                            MessageView(message: message, showPinyin: showPinyin)
+                                .id(message.id)
                         }
-                        .padding(.horizontal)
                     }
-                    .onChange(of: viewModel.messages) { _, messages in
-                        if let lastId = messages.last?.id {
-                            withAnimation {
-                                scrollViewProxy.scrollTo("\(lastId)-\(viewModel.showPinyin)", anchor: .bottom)
-                            }
+                    .padding()
+                }
+                .onChange(of: session.messages.count) { oldValue, newValue in
+                    if let lastMessage = session.messages.last {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
                         }
                     }
                 }
-                
-                Divider()
+            }
+            
+            VStack(spacing: 8) {
+                Toggle("显示拼音", isOn: $showPinyin)
+                    .padding(.horizontal)
                 
                 HStack {
-                    TextField("输入消息...", text: $userInput)
+                    TextField("输入消息...", text: $inputText)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .onSubmit {
-                            sendMessage()
-                        }
-                        .keyboardType(.default)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .submitLabel(.send)
+                        .focused($isFocused)
                     
                     Button(action: sendMessage) {
-                        Text("发送")
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.blue)
-                            .cornerRadius(8)
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title2)
                     }
+                    .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .padding()
             }
-            .navigationTitle("问问")
+            .background(Color(.systemBackground))
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Color(.systemGray4)),
+                alignment: .top
+            )
         }
     }
     
     private func sendMessage() {
-        guard !userInput.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        viewModel.sendMessage(userInput)
-        userInput = ""
+        let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        
+        var updatedSession = session
+        let userMessage = ChatMessage(role: .user, content: trimmedText)
+        updatedSession.addMessage(userMessage)
+        chatStore.updateCurrentSession(updatedSession)
+        
+        inputText = ""
+        isFocused = false
+        
+        // Send to API and handle response
+        Task {
+            do {
+                let response = try await APIManager.shared.sendMessage(messages: updatedSession.messages)
+                var sessionWithResponse = updatedSession
+                sessionWithResponse.addMessage(response)
+                await MainActor.run {
+                    chatStore.updateCurrentSession(sessionWithResponse)
+                }
+            } catch {
+                print("Error sending message: \(error)")
+            }
+        }
     }
 }
 
-struct ChatRow: View {
+struct MessageView: View {
     let message: ChatMessage
     let showPinyin: Bool
     

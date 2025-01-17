@@ -1,11 +1,32 @@
 import Foundation
 
 class APIManager {
+    static let shared = APIManager()
+    
+    private init() {}
+    
     private let baseUrl = "https://api.deepseek.com/v1/chat/completions"
     private let modelName = "deepseek-chat"
     
     private var apiKey: String {
         return Config.apiKey
+    }
+    
+    func sendMessage(messages: [ChatMessage]) async throws -> ChatMessage {
+        return try await withCheckedThrowingContinuation { continuation in
+            var responseContent = ""
+            
+            sendStreamingRequest(
+                messages: messages.map { ["role": $0.role.rawValue, "content": $0.content] },
+                onPartialResponse: { content in
+                    responseContent += content
+                },
+                completion: {
+                    let response = ChatMessage(role: .assistant, content: responseContent)
+                    continuation.resume(returning: response)
+                }
+            )
+        }
     }
     
     func sendStreamingRequest(messages: [[String: String]],
