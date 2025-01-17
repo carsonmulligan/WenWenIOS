@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WelcomeView: View {
     @EnvironmentObject var chatStore: ChatStore
+    @StateObject private var viewModel = ChatViewModel()
     
     let conversationStarters = [
         "教我三十六计的一个计谋，用ASCII艺术来解释",
@@ -44,11 +45,7 @@ struct WelcomeView: View {
                 VStack(spacing: 12) {
                     ForEach(conversationStarters, id: \.self) { starter in
                         Button(action: {
-                            let newSession = chatStore.createNewSession()
-                            if var session = newSession {
-                                session.addMessage(ChatMessage(role: .user, content: starter))
-                                chatStore.updateCurrentSession(session)
-                            }
+                            startNewConversation(with: starter)
                         }) {
                             Text(starter)
                                 .font(.body)
@@ -71,5 +68,29 @@ struct WelcomeView: View {
             .padding(.top, 20)
         }
         .padding()
+    }
+    
+    private func startNewConversation(with starter: String) {
+        let newSession = chatStore.createNewSession()
+        guard var session = newSession else { return }
+        
+        // Create and add the user message
+        let userMessage = ChatMessage(role: .user, content: starter)
+        session.addMessage(userMessage)
+        chatStore.updateCurrentSession(session)
+        
+        // Send the message to the API
+        Task {
+            do {
+                let response = try await APIManager.shared.sendMessage(messages: session.messages)
+                var updatedSession = session
+                updatedSession.addMessage(response)
+                await MainActor.run {
+                    chatStore.updateCurrentSession(updatedSession)
+                }
+            } catch {
+                print("Error sending message: \(error)")
+            }
+        }
     }
 } 
