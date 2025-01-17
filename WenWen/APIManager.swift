@@ -1,6 +1,10 @@
 import Foundation
 
 class APIManager {
+    static let shared = APIManager()
+    
+    private init() {}
+    
     private let baseUrl = "https://api.deepseek.com/v1/chat/completions"
     private let modelName = "deepseek-chat"
     
