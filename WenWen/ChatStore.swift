@@ -10,11 +10,13 @@ class ChatStore: ObservableObject {
         loadSessions()
     }
     
-    func createNewSession() {
+    @discardableResult
+    func createNewSession() -> ChatSession? {
         let newSession = ChatSession()
         currentSession = newSession
         sessions.append(newSession)
         saveSessions()
+        return newSession
     }
     
     func loadSession(_ id: UUID) {
