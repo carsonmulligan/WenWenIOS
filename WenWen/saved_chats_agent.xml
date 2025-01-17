@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<design>
+    <summary>
+        Implementation plan for chat history and navigation system similar to ChatGPT, with a landing page, new chat functionality, and saved chats sidebar.
+    </summary>
+
+    <models>
+        <model name="ChatSession">
+            <code_example>
+                <![CDATA[
+struct ChatSession: Identifiable, Codable {
+    let id: UUID
+    var title: String
+    var messages: [ChatMessage]
+    var createdAt: Date
+    var lastModified: Date
+    
+    // Generate title from first message content
+    mutating func generateTitle() {
+        if let firstMessage = messages.first {
+            // Take first 20 characters of first message
+            let preview = String(firstMessage.content.prefix(20))
+            title = preview + (firstMessage.content.count > 20 ? "..." : "")
+        }
+    }
+}
+                ]]>
+            </code_example>
+        </model>
+
+        <model name="ChatStore">
+            <code_example>
+                <![CDATA[
+class ChatStore: ObservableObject {
+    @Published var sessions: [ChatSession] = []
+    @Published var currentSession: ChatSession?
+    
+    private let fileManager = FileManager.default
+    private let sessionsFileName = "chat_sessions.json"
+    
+    init() {
+        loadSessions()
+    }
+    
+    func createNewSession() {
+        let newSession = ChatSession(
+            id: UUID(),
+            title: "新对话",
+            messages: [],
+            createdAt: Date(),
+            lastModified: Date()
+        )
+        currentSession = newSession
+        sessions.append(newSession)
+        saveSessions()
+    }
+    
+    func loadSession(_ id: UUID) {
+        currentSession = sessions.first { $session in
+            session.id == id
+        }
+    }
+    
+    private func saveSessions() {
+        guard let url = getDocumentsDirectory()?.appendingPathComponent(sessionsFileName) else { return }
+        do {
+            let data = try JSONEncoder().encode(sessions)
+            try data.write(to: url)
+        } catch {
+            print("Error saving sessions: \(error)")
+        }
+    }
+    
+    private func loadSessions() {
+        guard let url = getDocumentsDirectory()?.appendingPathComponent(sessionsFileName),
+              let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([ChatSession].self, from: data) else {
+            return
+        }
+        sessions = decoded
+    }
+    
+    private func getDocumentsDirectory() -> URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    }
+}
+                ]]>
+            </code_example>
+        </model>
+    </models>
+
+    <views>
+        <view name="MainView">
+            <description>Root view that handles navigation and sidebar</description>
+            <code_example>
+                <![CDATA[
+struct MainView: View {
+    @StateObject private var chatStore = ChatStore()
+    @State private var showingSidebar = false
+    
+    var body: some View {
+        NavigationView {
+            if let currentSession = chatStore.currentSession {
+                ChatView(session: currentSession)
+                    .navigationBarItems(
+                        leading: Button(action: { showingSidebar.toggle() }) {
+                            Image(systemName: "sidebar.left")
+                        },
+                        trailing: Button(action: { chatStore.createNewSession() }) {
+                            Image(systemName: "square.and.pencil")
+                        }
+                    )
+            } else {
+                WelcomeView()
+                    .navigationBarItems(
+                        leading: Button(action: { showingSidebar.toggle() }) {
+                            Image(systemName: "sidebar.left")
+                        }
+                    )
+            }
+        }
+        .sheet(isPresented: $showingSidebar) {
+            SidebarView(sessions: chatStore.sessions) { sessionId in
+                chatStore.loadSession(sessionId)
+                showingSidebar = false
+            }
+        }
+    }
+}
+                ]]>
+            </code_example>
+        </view>
+
+        <view name="WelcomeView">
+            <description>Landing page with greeting and new chat button</description>
+            <code_example>
+                <![CDATA[
+struct WelcomeView: View {
+    @EnvironmentObject var chatStore: ChatStore
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("欢迎使用问问")
+                .font(.largeTitle)
+                .bold()
+            
+            Text("您的中文学习助手")
+                .font(.title2)
+                .foregroundColor(.secondary)
+            
+            Button(action: { chatStore.createNewSession() }) {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("开始新对话")
+                }
+                .font(.headline)
+                .padding()
+                .foregroundColor(.white)
+                .background(Color.blue)
+                .cornerRadius(10)
+            }
+            .padding(.top, 30)
+        }
+    }
+}
+                ]]>
+            </code_example>
+        </view>
+
+        <view name="SidebarView">
+            <description>Sidebar showing chat history</description>
+            <code_example>
+                <![CDATA[
+struct SidebarView: View {
+    let sessions: [ChatSession]
+    let onSessionSelect: (UUID) -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(sessions.sorted(by: { $0.lastModified > $1.lastModified })) { session in
+                    Button(action: { onSessionSelect(session.id) }) {
+                        VStack(alignment: .leading) {
+                            Text(session.title)
+                                .font(.headline)
+                            Text(session.createdAt, style: .date)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("历史对话")
+            .navigationBarItems(trailing: Button("关闭") {
+                dismiss()
+            })
+        }
+    }
+}
+                ]]>
+            </code_example>
+        </view>
+    </views>
+
+    <implementation_steps>
+        <step order="1">
+            Create ChatSession and ChatStore models for managing chat history
+        </step>
+        <step order="2">
+            Implement MainView as the new root view of the app
+        </step>
+        <step order="3">
+            Create WelcomeView for the landing page
+        </step>
+        <step order="4">
+            Implement SidebarView for chat history
+        </step>
+        <step order="5">
+            Update existing ChatView to work with ChatSession model
+        </step>
+        <step order="6">
+            Update WenWenApp.swift to use MainView as root
+        </step>
+    </implementation_steps>
+
+    <notes>
+        <note>The design follows iOS standard navigation patterns</note>
+        <note>Uses sheet for sidebar on iPhone, split view possible for iPad</note>
+        <note>Automatically generates chat titles from first message</note>
+        <note>Persists all data locally using JSON</note>
+        <note>Maintains real-time sync between views using ObservableObject</note>
+    </notes>
+</design> 
