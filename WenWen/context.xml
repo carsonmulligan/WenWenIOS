@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<application>
+    <name>WenWen (问问)</name>
+    <description>A Chinese language learning assistant iOS application built with SwiftUI</description>
+    
+    <overview>
+        WenWen is an interactive Chinese learning application that provides conversational practice and learning assistance. The app features a chat-based interface where users can interact with an AI assistant in Chinese, with support for pinyin display to aid in pronunciation and character recognition.
+    </overview>
+    
+    <core-features>
+        <feature name="Chat Interface">
+            <description>Interactive chat system with AI-powered responses</description>
+            <components>
+                <component>Real-time message exchange</component>
+                <component>Support for both Chinese characters and pinyin display</component>
+                <component>Toggle option for showing/hiding pinyin</component>
+            </components>
+        </feature>
+        
+        <feature name="Welcome Screen">
+            <description>User-friendly landing page with conversation starters</description>
+            <components>
+                <component>Quick-start conversation suggestions</component>
+                <component>New chat creation functionality</component>
+                <component>Predefined learning prompts</component>
+            </components>
+        </feature>
+        
+        <feature name="Pinyin Support">
+            <description>Character-by-character pinyin display system</description>
+            <components>
+                <component>Individual character pinyin mapping</component>
+                <component>Tone indication support</component>
+                <component>Dynamic text layout with pinyin alignment</component>
+            </components>
+        </feature>
+    </core-features>
+    
+    <technical-structure>
+        <components>
+            <component name="WenWenApp">Main application entry point</component>
+            <component name="WelcomeView">Initial user interface and conversation starter screen</component>
+            <component name="ChatView">Main chat interface with message display and input</component>
+            <component name="ChatStore">State management for chat sessions</component>
+            <component name="PinyinDictionary">Chinese character to pinyin conversion system</component>
+        </components>
+        
+        <data-management>
+            <store name="ChatStore">Manages chat sessions and message history</store>
+            <dictionary name="PinyinDictionary">Handles Chinese character to pinyin mapping</dictionary>
+        </data-management>
+    </technical-structure>
+    
+    <user-interaction>
+        <workflows>
+            <workflow name="New Conversation">
+                <step>User starts from welcome screen</step>
+                <step>Selects conversation starter or creates new chat</step>
+                <step>Enters into interactive chat interface</step>
+            </workflow>
+            <workflow name="Message Exchange">
+                <step>User inputs Chinese text</step>
+                <step>System processes and displays with optional pinyin</step>
+                <step>AI assistant responds with relevant content</step>
+            </workflow>
+        </workflows>
+    </user-interaction>
+</application> 
